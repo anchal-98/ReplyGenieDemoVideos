@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReplyGenie — YouTube Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --purple:#9333ea;
+  --purple-light:#c084fc;
+  --pink:#ec4899;
+  --orange:#f97316;
+  --bg:#08050e;
+  --surface:rgba(255,255,255,.045);
+  --border:rgba(255,255,255,.09);
+  --text:#f0ecf8;
+  --muted:rgba(255,255,255,.38);
+}
+
+html,body{
+  width:100%;height:100%;
+  overflow:hidden;
+  background:var(--bg);
+  font-family:'Bricolage Grotesque',sans-serif;
+  color:var(--text);
+}
+
+/* ── SCALE-TO-FIT WRAPPER ── */
+/* Stage stays 1920×1080 internally.
+   JS sets left/top offsets + transform:scale() to letterbox it. */
+#scale-root {
+  position:fixed;
+  top:0;left:0;
+  width:100vw;height:100vh;
+  overflow:hidden;
+  background:var(--bg);
+}
+
+#stage{
+  position:absolute;
+  width:1920px;height:1080px;
+  overflow:hidden;
+  transform-origin:top left;
+  /* left / top / transform set by applyScale() in JS */
+}
+
+/* ── CHIP / BADGE VISIBILITY FIX ── */
+/* Boost contrast so chips never disappear against any bg */
+.chip-p{background:rgba(168,85,247,.25) !important;color:#d8b4fe !important;border:1px solid rgba(168,85,247,.55) !important}
+.chip-pk{background:rgba(236,72,153,.22) !important;color:#f9a8d4 !important;border:1px solid rgba(236,72,153,.5) !important}
+.chip-o{background:rgba(249,115,22,.2) !important;color:#fdba74 !important;border:1px solid rgba(249,115,22,.5) !important}
+.chip-g{background:rgba(34,197,94,.18) !important;color:#86efac !important;border:1px solid rgba(34,197,94,.5) !important}
+
+/* Chapter card chip overrides */
+.chip {
+  font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px;
+  padding:7px 18px;border-radius:100px;
+  font-weight:500;
+}
+
+/* ── NOISE LAYER ── */
+#stage::before{
+  content:'';position:absolute;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity:.028;pointer-events:none;z-index:9999
+}
+
+/* ── GRID LINES ── */
+#stage::after{
+  content:'';position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(147,51,234,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(147,51,234,.04) 1px, transparent 1px);
+  background-size:80px 80px;
+  pointer-events:none;z-index:0
+}
+
+/* ── SCENES ── */
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden}
+
+.scene{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;z-index:10;
+}
+.scene.active{opacity:1;pointer-events:all}
+
+/* ── BLOBS ── */
+.blobs{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
+.blob{position:absolute;border-radius:50%;filter:blur(120px);animation:drift 24s ease-in-out infinite alternate}
+.b1{width:900px;height:900px;background:#7c3aed;opacity:.16;top:-350px;left:-250px;animation-duration:30s}
+.b2{width:600px;height:600px;background:#f97316;opacity:.09;bottom:-200px;right:-150px;animation-duration:22s;animation-delay:-11s}
+.b3{width:550px;height:550px;background:#ec4899;opacity:.11;bottom:-50px;left:30%;animation-duration:26s;animation-delay:-7s}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(60px,80px) scale(1.12)}}
+
+/* ── GRADIENT TEXT ── */
+.gp{background:linear-gradient(100deg,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.go{background:linear-gradient(100deg,#fb923c,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.gb{background:linear-gradient(100deg,#38bdf8,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* ── KEYFRAMES ── */
+@keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideDown{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scaleIn{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes floatY{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(2)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 40px rgba(147,51,234,.4)}50%{box-shadow:0 0 80px rgba(147,51,234,.8),0 0 120px rgba(236,72,153,.3)}}
+@keyframes wipeRight{from{width:0}to{width:100%}}
+@keyframes countBeat{0%{transform:scale(1.3)}100%{transform:scale(1)}}
+@keyframes typewriter{from{width:0}to{width:100%}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes revealMask{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0% 0 0)}}
+@keyframes featureSlide{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes stat-count-up{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══════════════════════════════════
+   SCENE 0: HOOK / OPENER
+══════════════════════════════════ */
+#s0{background:radial-gradient(ellipse 80% 70% at 50% 40%, rgba(147,51,234,.2), transparent 70%)}
+
+.s0-eyebrow{
+  font-family:'Space Mono',monospace;font-size:13px;letter-spacing:3px;
+  color:var(--purple-light);text-transform:uppercase;margin-bottom:24px;
+  display:flex;align-items:center;gap:10px;
+  animation:slideDown .7s .1s ease both;
+}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#f472b6;animation:pulse 1.8s infinite}
+
+.s0-headline{
+  font-size:128px;font-weight:800;letter-spacing:-6px;line-height:.96;
+  text-align:center;margin-bottom:28px;
+  animation:slideUp .9s .2s cubic-bezier(.16,1,.3,1) both;
+}
+.s0-sub{
+  font-family:'Space Mono',monospace;font-size:18px;color:var(--muted);
+  text-align:center;line-height:1.8;margin-bottom:48px;
+  animation:slideUp .7s .4s ease both;
+}
+
+.s0-chips{
+  display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:56px;
+  animation:slideUp .7s .5s ease both;
+}
+.chip{
+  font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px;
+  padding:7px 18px;border-radius:100px;
+}
+.chip-p{background:rgba(168,85,247,.15);color:#c084fc;border:1px solid rgba(168,85,247,.35)}
+.chip-pk{background:rgba(236,72,153,.12);color:#f472b6;border:1px solid rgba(236,72,153,.3)}
+.chip-o{background:rgba(249,115,22,.1);color:#fb923c;border:1px solid rgba(249,115,22,.28)}
+.chip-g{background:rgba(34,197,94,.08);color:#4ade80;border:1px solid rgba(34,197,94,.22)}
+
+.s0-stats{
+  display:flex;gap:0;border:1px solid rgba(168,85,247,.2);border-radius:20px;
+  overflow:hidden;background:rgba(168,85,247,.05);
+  animation:slideUp .7s .65s ease both;
+}
+.stat-item{padding:22px 48px;text-align:center;border-right:1px solid rgba(168,85,247,.15);position:relative}
+.stat-item:last-child{border-right:none}
+.stat-n{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.stat-l{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1.5px;margin-top:6px}
+
+.s0-countdown{
+  position:absolute;bottom:80px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:16px;
+  font-family:'Space Mono',monospace;font-size:12px;color:rgba(255,255,255,.3);
+  animation:fadeIn 1s 1.2s ease both;
+}
+.cd-circle{
+  width:44px;height:44px;border-radius:50%;
+  background:rgba(147,51,234,.15);border:1.5px solid rgba(147,51,234,.5);
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:800;color:#c084fc;
+}
+.cd-bar{width:240px;height:2px;background:rgba(255,255,255,.08);border-radius:1px;overflow:hidden}
+.cd-fill{height:100%;background:linear-gradient(90deg,#9333ea,#ec4899);border-radius:1px;width:0}
+
+/* ═══════════════════════════════════
+   SCENE 1: PROBLEM HOOK
+══════════════════════════════════ */
+#s1{background:linear-gradient(135deg, rgba(8,5,14,1) 0%, rgba(20,10,35,1) 100%)}
+
+.s1-inner{display:flex;gap:80px;align-items:center;max-width:1600px;width:100%;padding:0 80px;position:relative;z-index:2}
+
+.s1-left{flex:1}
+.s1-tag{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:3px;color:#f472b6;margin-bottom:20px;animation:slideDown .6s ease both}
+.s1-h{font-size:80px;font-weight:800;letter-spacing:-4px;line-height:1.0;margin-bottom:24px;animation:slideUp .7s .1s ease both}
+.s1-p{font-family:'Space Mono',monospace;font-size:16px;color:var(--muted);line-height:1.85;margin-bottom:40px;animation:slideUp .7s .2s ease both}
+
+.pain-list{display:flex;flex-direction:column;gap:16px;animation:slideUp .7s .3s ease both}
+.pain-item{
+  display:flex;align-items:center;gap:16px;
+  padding:18px 24px;border-radius:14px;
+  background:rgba(236,72,153,.07);border:1px solid rgba(236,72,153,.18);
+}
+.pain-icon{font-size:22px;width:40px;text-align:center}
+.pain-text{font-size:15px;color:rgba(255,255,255,.75);line-height:1.5}
+.pain-text strong{color:#f5f0fa;display:block;margin-bottom:3px;font-size:17px}
+
+.s1-right{flex:0 0 620px;animation:scaleIn .8s .2s cubic-bezier(.34,1.56,.64,1) both}
+
+.inbox-card{
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  border-radius:20px;padding:28px;
+  box-shadow:0 40px 120px rgba(0,0,0,.6);
+}
+.inbox-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.inbox-title{font-size:18px;font-weight:700;letter-spacing:-.5px}
+.inbox-badge{
+  background:rgba(236,72,153,.2);color:#f472b6;
+  font-family:'Space Mono',monospace;font-size:11px;
+  padding:4px 12px;border-radius:100px;border:1px solid rgba(236,72,153,.35)
+}
+
+.email-row{
+  display:flex;align-items:flex-start;gap:14px;padding:16px;
+  border-radius:12px;margin-bottom:8px;border:1px solid transparent;cursor:default;
+}
+.email-row:hover{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.07)}
+.email-row.unread{background:rgba(147,51,234,.06);border-color:rgba(147,51,234,.15)}
+.email-avatar{
+  width:40px;height:40px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:14px;flex-shrink:0
+}
+.email-meta{flex:1;min-width:0}
+.email-from{font-size:14px;font-weight:700;letter-spacing:-.3px}
+.email-subj{font-size:13px;color:rgba(255,255,255,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.email-preview{font-family:'Space Mono',monospace;font-size:11px;color:rgba(255,255,255,.3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
+.email-time{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0}
+.unread-dot{width:8px;height:8px;border-radius:50%;background:#c084fc;flex-shrink:0;margin-top:6px}
+
+.inbox-stress{
+  display:flex;align-items:center;gap:10px;
+  margin-top:20px;padding:14px 18px;
+  background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.2);border-radius:12px;
+  font-family:'Space Mono',monospace;font-size:12px;color:#fb923c;
+}
+
+/* ═══════════════════════════════════
+   SCENE 2: SOLUTION INTRO
+══════════════════════════════════ */
+#s2{background:radial-gradient(ellipse 90% 60% at 50% 30%, rgba(147,51,234,.25), transparent 65%)}
+
+.s2-eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:3px;color:#4ade80;display:flex;align-items:center;gap:10px;margin-bottom:28px;animation:slideDown .6s ease both}
+.green-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:pulse 2s infinite}
+
+.s2-h{font-size:110px;font-weight:800;letter-spacing:-5px;line-height:.95;text-align:center;margin-bottom:28px;animation:slideUp .8s .1s cubic-bezier(.16,1,.3,1) both}
+.s2-sub{font-family:'Space Mono',monospace;font-size:17px;color:var(--muted);text-align:center;line-height:1.85;margin-bottom:56px;animation:slideUp .7s .25s ease both}
+
+.features-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:20px;width:100%;max-width:1400px;
+  animation:slideUp .8s .4s ease both;
+}
+.feat-card{
+  padding:32px 28px;border-radius:20px;border:1px solid;
+  text-align:left;position:relative;overflow:hidden;
+}
+.feat-card::before{content:'';position:absolute;inset:0;background:inherit;opacity:.06;border-radius:inherit}
+.feat-card.fc-p{background:rgba(168,85,247,.1);border-color:rgba(168,85,247,.3)}
+.feat-card.fc-pk{background:rgba(236,72,153,.08);border-color:rgba(236,72,153,.25)}
+.feat-card.fc-o{background:rgba(249,115,22,.07);border-color:rgba(249,115,22,.22)}
+.feat-card.fc-g{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2)}
+
+.feat-icon{font-size:36px;margin-bottom:16px}
+.feat-title{font-size:20px;font-weight:700;letter-spacing:-.5px;margin-bottom:8px}
+.feat-desc{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);line-height:1.7}
+
+/* ═══════════════════════════════════
+   SCENE 3: VIDEO 1 CHAPTER CARD
+══════════════════════════════════ */
+#s3{background:rgba(8,5,14,.97)}
+
+.ch-number{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:3px;color:rgba(168,85,247,.6);margin-bottom:20px;animation:slideDown .6s ease both}
+.ch-icon{
+  width:90px;height:90px;border-radius:24px;
+  display:flex;align-items:center;justify-content:center;font-size:42px;
+  margin-bottom:28px;
+  background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.3);
+  animation:scaleIn .6s .05s cubic-bezier(.34,1.56,.64,1) both;
+  animation:floatY 3s ease-in-out infinite;
+}
+.ch-title{font-size:72px;font-weight:800;letter-spacing:-3px;line-height:1.05;text-align:center;margin-bottom:14px;animation:slideUp .6s .1s ease both}
+.ch-sub{font-family:'Space Mono',monospace;font-size:16px;color:var(--muted);text-align:center;line-height:1.8;max-width:700px;animation:slideUp .6s .2s ease both}
+.ch-features{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:28px;animation:slideUp .6s .3s ease both}
+
+/* ═══════════════════════════════════
+   SCENE 4: VIDEO 1
+══════════════════════════════════ */
+#s4{background:#000;padding:0}
+
+.vid-wrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+
+.vid-top{
+  position:absolute;top:0;left:0;right:0;padding:28px 40px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(to bottom,rgba(8,5,14,.9),transparent);
+  z-index:20;pointer-events:none;
+}
+.vid-chapter-tag{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Space Mono',monospace;font-size:11px;color:#c084fc;letter-spacing:1.5px;
+}
+.vid-logo-wrap{display:flex;align-items:center;gap:10px}
+.vid-logo-text{font-size:18px;font-weight:800;letter-spacing:-.5px;color:#f5f0fa}
+.vid-logo-text span{background:linear-gradient(90deg,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+/* Callout */
+.callout{
+  position:absolute;z-index:25;pointer-events:none;
+  opacity:0;transition:opacity .45s ease,transform .45s cubic-bezier(.34,1.56,.64,1);
+  transform:translateY(12px);
+}
+.callout.show{opacity:1;transform:translateY(0)}
+
+/* Solid dark base — always readable over ANY video background
+   (white Gmail UI, dark terminal, bright screenshots) */
+.callout-inner{
+  display:flex;align-items:center;gap:12px;padding:14px 22px;border-radius:14px;
+  white-space:nowrap;
+  background:#0e0a1c;            /* opaque dark purple-black */
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.1),   /* subtle white rim */
+    0 8px 32px rgba(0,0,0,.7),        /* strong drop shadow */
+    0 2px 8px rgba(0,0,0,.5);
+}
+
+.callout-icon{font-size:22px;flex-shrink:0}
+
+/* Strong white text — readable on dark chip bg */
+.callout-text strong{
+  display:block;font-size:15px;font-weight:700;
+  color:#ffffff;letter-spacing:-.2px;
+}
+.callout-text span{
+  font-family:'Space Mono',monospace;font-size:10px;
+  color:rgba(255,255,255,.58);
+}
+
+/* Colored left accent bar for identity, plus matching glow border */
+.cl-p  .callout-inner{border-left:3px solid #a855f7;border-top:1px solid rgba(168,85,247,.45);border-right:1px solid rgba(168,85,247,.2);border-bottom:1px solid rgba(168,85,247,.2);box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 32px rgba(0,0,0,.7),0 0 20px rgba(168,85,247,.18)}
+.cl-pk .callout-inner{border-left:3px solid #ec4899;border-top:1px solid rgba(236,72,153,.4);border-right:1px solid rgba(236,72,153,.18);border-bottom:1px solid rgba(236,72,153,.18);box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 32px rgba(0,0,0,.7),0 0 20px rgba(236,72,153,.16)}
+.cl-o  .callout-inner{border-left:3px solid #f97316;border-top:1px solid rgba(249,115,22,.38);border-right:1px solid rgba(249,115,22,.18);border-bottom:1px solid rgba(249,115,22,.18);box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 32px rgba(0,0,0,.7),0 0 20px rgba(249,115,22,.14)}
+.cl-g  .callout-inner{border-left:3px solid #22c55e;border-top:1px solid rgba(34,197,94,.35);border-right:1px solid rgba(34,197,94,.16);border-bottom:1px solid rgba(34,197,94,.16);box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 32px rgba(0,0,0,.7),0 0 20px rgba(34,197,94,.14)}
+.cl-b  .callout-inner{border-left:3px solid #38bdf8;border-top:1px solid rgba(56,189,248,.35);border-right:1px solid rgba(56,189,248,.16);border-bottom:1px solid rgba(56,189,248,.16);box-shadow:0 0 0 1px rgba(0,0,0,.3),0 8px 32px rgba(0,0,0,.7),0 0 20px rgba(56,189,248,.14)}
+
+.pos-bl{bottom:100px;left:40px}
+.pos-br{bottom:100px;right:40px}
+.pos-tl{top:90px;left:40px}
+.pos-tr{top:90px;right:40px}
+.pos-bc{bottom:100px;left:50%;transform:translateX(-50%) translateY(12px)}
+.pos-bc.show{transform:translateX(-50%) translateY(0)}
+
+/* ═══════════════════════════════════
+   SCENE 5: CHAPTER 2 CARD
+══════════════════════════════════ */
+#s5{background:rgba(8,5,14,.97)}
+
+/* ═══════════════════════════════════
+   SCENE 6: VIDEO 2
+══════════════════════════════════ */
+#s6{background:#000;padding:0}
+
+/* ═══════════════════════════════════
+   SCENE 7: FEATURES DEEP DIVE
+══════════════════════════════════ */
+#s7{background:linear-gradient(135deg,rgba(8,5,14,1) 0%,rgba(18,8,30,1) 100%)}
+
+.s7-inner{display:flex;gap:100px;align-items:center;max-width:1700px;width:100%;padding:0 80px;position:relative;z-index:2}
+
+.s7-left{flex:0 0 700px}
+.s7-tag{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:3px;color:#fb923c;margin-bottom:20px;animation:slideDown .6s ease both}
+.s7-h{font-size:76px;font-weight:800;letter-spacing:-3.5px;line-height:1.0;margin-bottom:24px;animation:slideUp .7s .1s ease both}
+.s7-p{font-family:'Space Mono',monospace;font-size:14px;color:var(--muted);line-height:1.9;animation:slideUp .7s .2s ease both}
+
+.s7-right{flex:1;animation:slideUp .8s .25s ease both}
+
+.feature-rows{display:flex;flex-direction:column;gap:20px}
+.feat-row{
+  display:flex;align-items:flex-start;gap:20px;padding:24px;border-radius:18px;
+  background:var(--surface);border:1px solid var(--border);
+  transition:border-color .2s;
+}
+.feat-row:hover{border-color:rgba(168,85,247,.35)}
+.feat-num{
+  font-family:'Space Mono',monospace;font-size:11px;color:var(--purple-light);
+  width:28px;height:28px;border-radius:8px;
+  background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.3);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;margin-top:2px;font-weight:700;
+}
+.feat-body{}
+.feat-name{font-size:18px;font-weight:700;letter-spacing:-.4px;margin-bottom:6px}
+.feat-explain{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);line-height:1.75}
+
+/* ═══════════════════════════════════
+   SCENE 8: SOCIAL PROOF
+══════════════════════════════════ */
+#s8{background:radial-gradient(ellipse 70% 50% at 50% 40%, rgba(147,51,234,.2), transparent 65%)}
+
+.s8-h{font-size:96px;font-weight:800;letter-spacing:-5px;text-align:center;line-height:1.0;margin-bottom:16px;animation:slideUp .8s ease both}
+.s8-sub{font-family:'Space Mono',monospace;font-size:16px;color:var(--muted);text-align:center;margin-bottom:64px;animation:slideUp .7s .15s ease both}
+
+.review-row{display:flex;gap:24px;width:100%;max-width:1600px;animation:slideUp .8s .3s ease both}
+.review-card{
+  flex:1;padding:32px;border-radius:20px;
+  background:var(--surface);border:1px solid var(--border);
+}
+.review-stars{color:#f59e0b;font-size:16px;margin-bottom:14px;letter-spacing:2px}
+.review-text{font-size:16px;line-height:1.8;color:rgba(255,255,255,.82);margin-bottom:20px}
+.reviewer{display:flex;align-items:center;gap:14px}
+.reviewer-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.reviewer-name{font-size:15px;font-weight:700;letter-spacing:-.3px}
+.reviewer-role{font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px}
+
+/* ═══════════════════════════════════
+   SCENE 9: OUTRO / CTA
+══════════════════════════════════ */
+#s9{background:radial-gradient(ellipse 80% 60% at 50% 35%, rgba(147,51,234,.28), transparent 65%)}
+
+.outro-logo{display:flex;align-items:center;gap:16px;margin-bottom:32px;animation:scaleIn .8s .1s cubic-bezier(.34,1.56,.64,1) both}
+.outro-logo-text{font-size:42px;font-weight:800;letter-spacing:-1.5px;color:#f5f0fa}
+.outro-logo-text span{background:linear-gradient(90deg,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+.outro-h{font-size:102px;font-weight:800;letter-spacing:-5px;line-height:.96;text-align:center;margin-bottom:18px;animation:slideUp .8s .2s cubic-bezier(.16,1,.3,1) both}
+.outro-sub{font-family:'Space Mono',monospace;font-size:17px;color:var(--muted);text-align:center;line-height:1.85;margin-bottom:48px;animation:slideUp .7s .35s ease both}
+
+.outro-stats{
+  display:flex;gap:0;border:1px solid rgba(168,85,247,.22);border-radius:20px;
+  overflow:hidden;background:rgba(168,85,247,.05);margin-bottom:48px;
+  animation:slideUp .7s .45s ease both;
+}
+.ostat{padding:24px 56px;text-align:center;border-right:1px solid rgba(168,85,247,.15)}
+.ostat:last-child{border-right:none}
+.ostat-n{font-size:54px;font-weight:800;letter-spacing:-2.5px;line-height:1}
+.ostat-l{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1.5px;margin-top:8px}
+
+.cta-wrap{display:flex;flex-direction:column;align-items:center;gap:16px;animation:slideUp .7s .6s ease both}
+.cta-btn{
+  background:linear-gradient(135deg,#9333ea,#ec4899);
+  color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px;
+  padding:20px 56px;border-radius:16px;border:none;cursor:default;
+  display:inline-flex;align-items:center;gap:12px;
+  box-shadow:0 0 60px rgba(147,51,234,.55);
+  letter-spacing:-.5px;
+  animation:glowPulse 2.5s 1.5s ease-in-out infinite;
+}
+.cta-url{font-family:'Space Mono',monospace;font-size:12px;color:rgba(255,255,255,.3);letter-spacing:1px}
+.free-badge{display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace;font-size:12px;color:rgba(255,255,255,.38)}
+.free-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:pulse 2s infinite}
+
+/* ═══════════════════════════════════
+   PROGRESS BAR (bottom)
+══════════════════════════════════ */
+#progress-bar{
+  position:absolute;bottom:0;left:0;right:0;height:3px;z-index:9998;
+  background:rgba(255,255,255,.06);
+}
+#progress-fill{
+  height:100%;background:linear-gradient(90deg,#9333ea,#ec4899,#f97316);
+  width:0%;transition:width .08s linear;
+}
+
+/* ═══════════════════════════════════
+   WATERMARK
+══════════════════════════════════ */
+#watermark{
+  position:absolute;top:32px;right:40px;z-index:9990;
+  display:flex;align-items:center;gap:10px;
+  opacity:.7;
+}
+#watermark-text{font-size:16px;font-weight:800;letter-spacing:-.4px;color:#f5f0fa}
+#watermark-text span{background:linear-gradient(90deg,#c084fc,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+</style>
+</head>
+<body>
+
+<div id="scale-root">
+<div id="stage">
+  <div class="blobs" style="z-index:1">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+  </div>
+
+  <!-- ══ WATERMARK ══ -->
+  <div id="watermark">
+    <div id="watermark-text">Reply<span>Genie</span></div>
+  </div>
+
+  <!-- ══ PROGRESS BAR ══ -->
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+
+  <!-- ════════════════════════════
+       SCENE 0: OPENER
+  ════════════════════════════ -->
+  <div class="scene" id="s0">
+    <div class="s0-eyebrow">
+      <div class="live-dot"></div>
+      PRODUCT DEMO · 2026
+    </div>
+    <div class="s0-headline">
+      Stop wasting<br><span class="gp">your time</span><br>on emails.
+    </div>
+    <p class="s0-sub">
+      AI-powered replies, summaries & templates<br>living natively inside Gmail & Outlook Web.
+    </p>
+    <div class="s0-chips">
+      <span class="chip chip-p">⚡ AI Replies</span>
+      <span class="chip chip-pk">✦ Email Summaries</span>
+      <span class="chip chip-o">◈ Smart Templates</span>
+      <span class="chip chip-g">✓ One-Click Insert</span>
+    </div>
+    <div class="s0-stats">
+      <div class="stat-item">
+        <div class="stat-n"><span class="gp">10×</span></div>
+        <div class="stat-l">FASTER REPLIES</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n"><span class="go">2 hrs</span></div>
+        <div class="stat-l">SAVED PER WEEK</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n"><span class="gb">$0</span></div>
+        <div class="stat-l">TO GET STARTED</div>
+      </div>
+    </div>
+    <div class="s0-countdown" id="cdWrap">
+      <div class="cd-circle" id="cdNum">5</div>
+      <div class="cd-bar"><div class="cd-fill" id="cdFill"></div></div>
+      <span>Demo starts automatically...</span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 1: THE PROBLEM
+  ════════════════════════════ -->
+  <div class="scene" id="s1">
+    <div class="s1-inner" style="position:relative;z-index:2">
+      <div class="s1-left">
+        <div class="s1-tag">THE PROBLEM</div>
+        <div class="s1-h">Your inbox<br>is <span class="go">killing</span><br>your day.</div>
+        <p class="s1-p">
+          The average professional spends 3.1 hours per day<br>
+          reading and responding to email. That's 15 hours<br>
+          every week — gone forever.
+        </p>
+        <div class="pain-list">
+          <div class="pain-item">
+            <div class="pain-icon">😩</div>
+            <div class="pain-text"><strong>Context switching kills focus</strong>Every email reply costs you 23 minutes of deep work.</div>
+          </div>
+          <div class="pain-item">
+            <div class="pain-icon">✍️</div>
+            <div class="pain-text"><strong>Writer's block on every reply</strong>Staring at blank compose boxes, struggling to find the right words.</div>
+          </div>
+          <div class="pain-item">
+            <div class="pain-icon">🔁</div>
+            <div class="pain-text"><strong>Same emails, over and over</strong>Re-writing the same responses hundreds of times each month.</div>
+          </div>
+        </div>
+      </div>
+      <div class="s1-right">
+        <div class="inbox-card">
+          <div class="inbox-header">
+            <div class="inbox-title">Inbox</div>
+            <div class="inbox-badge">47 unread</div>
+          </div>
+          <div class="email-row unread">
+            <div class="email-avatar" style="background:rgba(168,85,247,.2);color:#c084fc">SR</div>
+            <div class="email-meta">
+              <div class="email-from">Sarah R. — Client</div>
+              <div class="email-subj">Follow-up: Q3 proposal review</div>
+              <div class="email-preview">Hi, I wanted to check in on the proposal we discussed...</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div class="email-time">9:42 AM</div>
+              <div class="unread-dot"></div>
+            </div>
+          </div>
+          <div class="email-row unread">
+            <div class="email-avatar" style="background:rgba(236,72,153,.15);color:#f472b6">MK</div>
+            <div class="email-meta">
+              <div class="email-from">Marcus K. — Team</div>
+              <div class="email-subj">Need your approval on budget</div>
+              <div class="email-preview">Hey, the finance team needs sign-off by EOD...</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div class="email-time">8:15 AM</div>
+              <div class="unread-dot" style="background:#f472b6"></div>
+            </div>
+          </div>
+          <div class="email-row unread">
+            <div class="email-avatar" style="background:rgba(249,115,22,.12);color:#fb923c">JL</div>
+            <div class="email-meta">
+              <div class="email-from">Jennifer L. — Partner</div>
+              <div class="email-subj">Re: Partnership agreement terms</div>
+              <div class="email-preview">Could you clarify clause 4.2 before we sign?</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+              <div class="email-time">Yesterday</div>
+              <div class="unread-dot" style="background:#fb923c"></div>
+            </div>
+          </div>
+          <div class="email-row" style="opacity:.5">
+            <div class="email-avatar" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.4)">+</div>
+            <div class="email-meta">
+              <div class="email-from" style="color:var(--muted)">44 more unread emails...</div>
+              <div class="email-subj">All waiting for your reply</div>
+            </div>
+          </div>
+          <div class="inbox-stress">
+            ⏱ &nbsp;Average reply time: 2.4 minutes per email · 47 emails = 1h 53m gone today
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 2: THE SOLUTION
+  ════════════════════════════ -->
+  <div class="scene" id="s2">
+    <div class="s2-eyebrow">
+      <div class="green-dot"></div>
+      INTRODUCING REPLYGENIE
+    </div>
+    <div class="s2-h">
+      <span style="color:#fff">Meet your</span><br><span class="gp">AI email co-pilot.</span>
+    </div>
+    <p class="s2-sub">
+      ReplyGenie lives inside Gmail & Outlook Web — no tab switching,<br>
+      no copy-pasting. Just click and send.
+    </p>
+    <div class="features-grid" style="position:relative;z-index:2">
+      <div class="feat-card fc-p">
+        <div class="feat-icon">⚡</div>
+        <div class="feat-title">Instant AI Replies</div>
+        <div class="feat-desc">Generate perfect, context-aware replies in under a second. AI reads your entire thread.</div>
+      </div>
+      <div class="feat-card fc-pk">
+        <div class="feat-icon">📋</div>
+        <div class="feat-title">Smart Summaries</div>
+        <div class="feat-desc">Never read a long thread again. Get the key points, action items, and deadlines instantly.</div>
+      </div>
+      <div class="feat-card fc-o">
+        <div class="feat-icon">🎨</div>
+        <div class="feat-title">Tone Control</div>
+        <div class="feat-desc">Professional, casual, concise, or warm — choose your exact voice for every reply.</div>
+      </div>
+      <div class="feat-card fc-g">
+        <div class="feat-icon">🔒</div>
+        <div class="feat-title">Privacy First</div>
+        <div class="feat-desc">Your emails are never stored or used for training. Zero data retention, ever.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 3: CHAPTER 1 CARD
+  ════════════════════════════ -->
+  <div class="scene" id="s3" style="background:rgba(8,5,14,.97)">
+    <div class="ch-number">PART 1 OF 2</div>
+    <div class="ch-icon" style="animation:floatY 3s ease-in-out infinite">⚡</div>
+    <div class="ch-title"><span class="gp">Quick Reply</span> Demo</div>
+    <div class="ch-sub">Watch ReplyGenie generate a perfect email reply<br>inside Gmail in under 30 seconds.</div>
+    <div class="ch-features">
+      <span class="chip chip-p">AI reads full thread</span>
+      <span class="chip chip-pk">Tone selection</span>
+      <span class="chip chip-o">One-click insert</span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 4: VIDEO 1
+  ════════════════════════════ -->
+  <div class="scene" id="s4" style="background:#000;padding:0">
+    <div class="vid-wrap">
+      <video id="v1" playsinline preload="auto">
+        <source src="demo1.mp4" type="video/mp4">
+      </video>
+      <div class="vid-top">
+        <div class="vid-chapter-tag"><div class="live-dot"></div>PART 1 · AI REPLY IN ACTION</div>
+        <div class="vid-logo-wrap">
+          <div class="vid-logo-text">Reply<span>Genie</span></div>
+        </div>
+      </div>
+      <!-- Callouts -->
+      <div class="callout cl-p pos-bl" id="c1_0">
+        <div class="callout-inner"><div class="callout-icon">📬</div><div class="callout-text"><strong>Opening Gmail</strong><span>ReplyGenie already loaded</span></div></div>
+      </div>
+      <div class="callout cl-pk pos-tl" id="c1_1">
+        <div class="callout-inner"><div class="callout-icon">✨</div><div class="callout-text"><strong>Click "AI Reply"</strong><span>Lives in the compose toolbar</span></div></div>
+      </div>
+      <div class="callout cl-p pos-tr" id="c1_2">
+        <div class="callout-inner"><div class="callout-icon">🤖</div><div class="callout-text"><strong>AI reads full thread</strong><span>Context understood instantly</span></div></div>
+      </div>
+      <div class="callout cl-g pos-br" id="c1_3">
+        <div class="callout-inner"><div class="callout-icon">⚡</div><div class="callout-text"><strong>Reply ready in 0.8s</strong><span>Professional tone selected</span></div></div>
+      </div>
+      <div class="callout cl-pk pos-bl" id="c1_4">
+        <div class="callout-inner"><div class="callout-icon">🎨</div><div class="callout-text"><strong>Choose your tone</strong><span>Short · Casual · Professional · Direct</span></div></div>
+      </div>
+      <div class="callout cl-o pos-br" id="c1_5">
+        <div class="callout-inner"><div class="callout-icon">👆</div><div class="callout-text"><strong>One-click insert</strong><span>Reply drops into compose box</span></div></div>
+      </div>
+      <div class="callout cl-g pos-bc" id="c1_6">
+        <div class="callout-inner"><div class="callout-icon">✅</div><div class="callout-text"><strong>Done! Saved ~4 minutes.</strong><span>Email sent with zero effort</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 5: CHAPTER 2 CARD
+  ════════════════════════════ -->
+  <div class="scene" id="s5" style="background:rgba(8,5,14,.97);display:flex;flex-direction:column;align-items:center;justify-content:center">
+    <div class="ch-number">PART 2 OF 2</div>
+    <div class="ch-icon" style="background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.3);animation:floatY 3s ease-in-out infinite">📋</div>
+    <div class="ch-title"><span class="go">Summary</span> & Templates</div>
+    <div class="ch-sub">Long threads? Endless chains? Watch ReplyGenie<br>summarize them and build smart templates instantly.</div>
+    <div class="ch-features">
+      <span class="chip chip-o">Thread summary</span>
+      <span class="chip chip-pk">Smart templates</span>
+      <span class="chip chip-g">Works in Outlook too</span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 6: VIDEO 2
+  ════════════════════════════ -->
+  <div class="scene" id="s6" style="background:#000;padding:0">
+    <div class="vid-wrap">
+      <video id="v2" playsinline preload="auto">
+        <source src="demo2.mp4" type="video/mp4">
+      </video>
+      <div class="vid-top">
+        <div class="vid-chapter-tag"><div class="live-dot"></div>PART 2 · SUMMARIES & TEMPLATES</div>
+        <div class="vid-logo-wrap">
+          <div class="vid-logo-text">Reply<span>Genie</span></div>
+        </div>
+      </div>
+      <!-- Callouts -->
+      <div class="callout cl-o pos-tl" id="c2_0">
+        <div class="callout-inner"><div class="callout-icon">📨</div><div class="callout-text"><strong>Long email thread</strong><span>14 back-and-forth messages</span></div></div>
+      </div>
+      <div class="callout cl-b pos-tr" id="c2_1">
+        <div class="callout-inner"><div class="callout-icon">🧠</div><div class="callout-text"><strong>Click "Summarize"</strong><span>AI processes the entire chain</span></div></div>
+      </div>
+      <div class="callout cl-g pos-bl" id="c2_2">
+        <div class="callout-inner"><div class="callout-icon">📝</div><div class="callout-text"><strong>Instant bullet summary</strong><span>Key points & action items extracted</span></div></div>
+      </div>
+      <div class="callout cl-pk pos-br" id="c2_3">
+        <div class="callout-inner"><div class="callout-icon">📐</div><div class="callout-text"><strong>Smart Templates</strong><span>Pre-built for your common replies</span></div></div>
+      </div>
+      <div class="callout cl-o pos-bc" id="c2_4">
+        <div class="callout-inner"><div class="callout-icon">🚀</div><div class="callout-text"><strong>Sent. Zero effort.</strong><span>That used to take 12 minutes</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 7: FEATURE DEEP DIVE
+  ════════════════════════════ -->
+  <div class="scene" id="s7">
+    <div class="s7-inner" style="position:relative;z-index:2">
+      <div class="s7-left">
+        <div class="s7-tag">EVERYTHING YOU GET</div>
+        <div class="s7-h">Built for<br>people who<br><span class="go">move fast.</span></div>
+        <p class="s7-p">
+          ReplyGenie isn't just another AI tool bolted onto your workflow.<br>
+          It lives inside your email client — exactly where you need it.<br><br>
+          No new tabs. No copy-paste. No context switching.<br>
+          Just email, handled.
+        </p>
+      </div>
+      <div class="s7-right">
+        <div class="feature-rows">
+          <div class="feat-row">
+            <div class="feat-num">01</div>
+            <div class="feat-body">
+              <div class="feat-name">AI-Powered Replies <span class="gp">⚡</span></div>
+              <div class="feat-explain">Claude AI reads your entire thread and crafts a contextually perfect reply. Choose tone: Professional, Casual, Direct, or Friendly.</div>
+            </div>
+          </div>
+          <div class="feat-row">
+            <div class="feat-num">02</div>
+            <div class="feat-body">
+              <div class="feat-name">Thread Summaries <span class="go">📋</span></div>
+              <div class="feat-explain">Instantly condense 20-email chains into 5 bullet points. Key decisions, action items, and deadlines — surfaced immediately.</div>
+            </div>
+          </div>
+          <div class="feat-row">
+            <div class="feat-num">03</div>
+            <div class="feat-body">
+              <div class="feat-name">Smart Templates <span class="gb">📐</span></div>
+              <div class="feat-explain">Save and reuse your best replies as templates. ReplyGenie auto-fills names, dates, and context from the email.</div>
+            </div>
+          </div>
+          <div class="feat-row">
+            <div class="feat-num">04</div>
+            <div class="feat-body">
+              <div class="feat-name">Native Gmail & Outlook <span style="color:#4ade80">🔒</span></div>
+              <div class="feat-explain">A Chrome extension that adds a single button to your compose toolbar. Works everywhere your email does.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 8: SOCIAL PROOF
+  ════════════════════════════ -->
+  <div class="scene" id="s8">
+    <div class="s8-h"><span class="gp">Loved</span> by early users.</div>
+    <p class="s8-sub">Real feedback from real professionals saving real time.</p>
+    <div class="review-row" style="position:relative;z-index:2">
+      <div class="review-card">
+        <div class="review-stars">★★★★★</div>
+        <div class="review-text">"I used to spend 90 minutes a day on email. With ReplyGenie, it's down to 20. It literally changed how I work."</div>
+        <div class="reviewer">
+          <div class="reviewer-avatar" style="background:rgba(168,85,247,.2);color:#c084fc">AK</div>
+          <div>
+            <div class="reviewer-name">Alex K.</div>
+            <div class="reviewer-role">Product Manager · Startup</div>
+          </div>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="review-stars">★★★★★</div>
+        <div class="review-text">"The AI actually understands the context of the thread. It's not generic — every reply feels like I wrote it myself, just 10× faster."</div>
+        <div class="reviewer">
+          <div class="reviewer-avatar" style="background:rgba(236,72,153,.15);color:#f472b6">SR</div>
+          <div>
+            <div class="reviewer-name">Samira R.</div>
+            <div class="reviewer-role">Account Executive · SaaS</div>
+          </div>
+        </div>
+      </div>
+      <div class="review-card">
+        <div class="review-stars">★★★★★</div>
+        <div class="review-text">"The summary feature alone is worth it. I cleared a 47-email backlog in 15 minutes. My team thought I had a superpower."</div>
+        <div class="reviewer">
+          <div class="reviewer-avatar" style="background:rgba(249,115,22,.12);color:#fb923c">JM</div>
+          <div>
+            <div class="reviewer-name">James M.</div>
+            <div class="reviewer-role">Founder · B2B Agency</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════
+       SCENE 9: OUTRO / CTA
+  ════════════════════════════ -->
+  <div class="scene" id="s9">
+    <div class="outro-logo">
+      <div class="outro-logo-text">Reply<span>Genie</span></div>
+    </div>
+    <div class="outro-h">
+      <span style="color:#fff">Your inbox.</span><br><span class="gp">Finally tamed.</span>
+    </div>
+    <p class="outro-sub">
+      Join thousands of professionals who've taken back their time.<br>
+      Free to install. Works in 30 seconds.
+    </p>
+    <div class="outro-stats">
+      <div class="ostat">
+        <div class="ostat-n"><span class="gp">10×</span></div>
+        <div class="ostat-l">FASTER REPLIES</div>
+      </div>
+      <div class="ostat">
+        <div class="ostat-n"><span class="go">2 hrs</span></div>
+        <div class="ostat-l">SAVED / WEEK</div>
+      </div>
+      <div class="ostat">
+        <div class="ostat-n"><span class="gb">$0</span></div>
+        <div class="ostat-l">TO GET STARTED</div>
+      </div>
+    </div>
+    <div class="cta-wrap">
+      <div class="cta-btn">
+        ✦ &nbsp;Install ReplyGenie Free &nbsp;→
+      </div>
+      <div class="cta-url">replygenie.app · Available on Chrome Web Store</div>
+      <div class="free-badge"><div class="free-dot"></div>Free plan available · No credit card required</div>
+    </div>
+  </div>
+
+</div><!-- /stage -->
+</div><!-- /scale-root -->
+
+<script>
+/* ── SCALE-TO-FIT ── 
+   Correct letterbox technique:
+   1. Calculate scale to fit viewport while keeping 16:9
+   2. Set stage left/top so it's centered in viewport
+   3. Apply ONLY scale() transform from top-left origin
+   No translate() inside transform — that fights with left/top. */
+(function(){
+  const W = 1920, H = 1080;
+
+  function applyScale(){
+    const stage = document.getElementById('stage');
+    if(!stage) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / W, vh / H);
+    /* Center: position top-left corner so scaled stage sits in middle */
+    const left = Math.round((vw - W * scale) / 2);
+    const top  = Math.round((vh - H * scale) / 2);
+    stage.style.left      = left  + 'px';
+    stage.style.top       = top   + 'px';
+    stage.style.transform = 'scale(' + scale + ')';
+  }
+
+  window.addEventListener('resize', applyScale);
+  document.addEventListener('DOMContentLoaded', applyScale);
+  /* Also run immediately in case DOM is already ready */
+  if(document.readyState !== 'loading') applyScale();
+})();
+</script>
+
+<script>
+/* ═══════════════════════════════════
+   TIMELINE CONFIGURATION
+   All times in seconds
+══════════════════════════════════ */
+const v1el = document.getElementById('v1');
+const v2el = document.getElementById('v2');
+
+// Scene timing — adjust to your video lengths
+const INTRO_DUR   = 7;   // s0: opener
+const PROB_DUR    = 7;   // s1: problem
+const SOL_DUR     = 6;   // s2: solution features
+const CH1_DUR     = 4;   // s3: chapter 1 card
+const V1_DUR      = 60;  // s4: video 1 (auto-detected)
+const CH2_DUR     = 4;   // s5: chapter 2 card
+const V2_DUR      = 60;  // s6: video 2 (auto-detected)
+const FEAT_DUR    = 7;   // s7: features
+const REVIEW_DUR  = 7;   // s8: social proof
+const OUTRO_DUR   = 9;   // s9: outro
+
+let v1dur = V1_DUR, v2dur = V2_DUR;
+
+// Scene start times (cumulative)
+let SCENES = [];
+function buildTimeline(){
+  SCENES = [
+    {start:0,             dur:INTRO_DUR},      // 0
+    {start:INTRO_DUR,     dur:PROB_DUR},        // 1
+    {start:INTRO_DUR+PROB_DUR, dur:SOL_DUR},   // 2
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR, dur:CH1_DUR}, // 3
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR, dur:v1dur}, // 4
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR+v1dur, dur:CH2_DUR}, // 5
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR+v1dur+CH2_DUR, dur:v2dur}, // 6
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR+v1dur+CH2_DUR+v2dur, dur:FEAT_DUR}, // 7
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR+v1dur+CH2_DUR+v2dur+FEAT_DUR, dur:REVIEW_DUR}, // 8
+    {start:INTRO_DUR+PROB_DUR+SOL_DUR+CH1_DUR+v1dur+CH2_DUR+v2dur+FEAT_DUR+REVIEW_DUR, dur:OUTRO_DUR}, // 9
+  ];
+  TOTAL = SCENES[SCENES.length-1].start + SCENES[SCENES.length-1].dur;
+}
+let TOTAL = 170;
+buildTimeline();
+
+// Video 1 callouts: [videoTime, duration, id]
+const v1callouts = [
+  [1,  4, 'c1_0'],
+  [5,  4, 'c1_1'],
+  [10, 5, 'c1_2'],
+  [16, 5, 'c1_3'],
+  [22, 5, 'c1_4'],
+  [30, 5, 'c1_5'],
+  [38, 6, 'c1_6'],
+];
+
+// Video 2 callouts: [videoTime, duration, id]
+const v2callouts = [
+  [1,  4, 'c2_0'],
+  [6,  5, 'c2_1'],
+  [12, 6, 'c2_2'],
+  [22, 6, 'c2_3'],
+  [35, 7, 'c2_4'],
+];
+
+/* ── STATE ── */
+let globalTime = 0;
+let curScene = -1;
+let lastTs = null;
+let playing = true;
+let v1started = false, v2started = false;
+let activeCallouts1 = {}, activeCallouts2 = {};
+let raf;
+
+/* ── LOAD DETECTION ── */
+let v1ready = false, v2ready = false;
+function onVideoMeta(which, dur){
+  if(which===1){ v1dur = Math.ceil(dur) || V1_DUR; v1ready=true; }
+  if(which===2){ v2dur = Math.ceil(dur) || V2_DUR; v2ready=true; }
+  if(v1ready && v2ready){ buildTimeline(); start(); }
+}
+v1el.addEventListener('loadedmetadata', ()=> onVideoMeta(1, v1el.duration));
+v2el.addEventListener('loadedmetadata', ()=> onVideoMeta(2, v2el.duration));
+v1el.addEventListener('error', ()=>{ v1ready=true; if(v2ready) start(); });
+v2el.addEventListener('error', ()=>{ v2ready=true; if(v1ready) start(); });
+// Fallback
+setTimeout(()=>{ v1ready=true; if(v2ready) start(); }, 3000);
+setTimeout(()=>{ v2ready=true; if(v1ready) start(); }, 3500);
+
+function start(){
+  goScene(0);
+  lastTs = null;
+  raf = requestAnimationFrame(tick);
+}
+
+/* ── SCENE MANAGEMENT ── */
+function goScene(idx){
+  if(idx === curScene) return;
+  document.querySelectorAll('.scene').forEach((el,i)=>el.classList.toggle('active', i===idx));
+  curScene = idx;
+
+  // Video control
+  if(idx===4 && !v1started){ v1started=true; v1el.play().catch(()=>{}); }
+  if(idx===6 && !v2started){ v2started=true; v2el.play().catch(()=>{}); }
+  if(idx!==4) v1el.pause();
+  if(idx!==6) v2el.pause();
+  if(idx===4 && v1started) v1el.play().catch(()=>{});
+  if(idx===6 && v2started) v2el.play().catch(()=>{});
+}
+
+/* ── CALLOUTS ── */
+function updateCallouts(list, videoTime, activeMap){
+  list.forEach(([vt, dur, id])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const show = videoTime >= vt && videoTime < vt+dur;
+    if(show && !activeMap[id]){ el.classList.add('show'); activeMap[id]=1; }
+    if(!show && activeMap[id]){ el.classList.remove('show'); delete activeMap[id]; }
+  });
+}
+
+/* ── MAIN TICK ── */
+function tick(ts){
+  if(playing){
+    if(lastTs!==null) globalTime = Math.min(globalTime + (ts-lastTs)/1000, TOTAL);
+    lastTs = ts;
+  } else { lastTs = null; }
+
+  // Find current scene
+  let sceneIdx = 0;
+  let localTime = globalTime;
+  for(let i=0;i<SCENES.length;i++){
+    if(globalTime >= SCENES[i].start){
+      sceneIdx = i;
+      localTime = globalTime - SCENES[i].start;
+    }
+  }
+
+  goScene(sceneIdx);
+
+  // Sync video 1
+  if(sceneIdx===4){
+    const tgt = Math.min(localTime, v1dur);
+    if(Math.abs(v1el.currentTime - tgt) > 0.4) v1el.currentTime = tgt;
+    if(playing && v1el.paused) v1el.play().catch(()=>{});
+    updateCallouts(v1callouts, v1el.currentTime, activeCallouts1);
+  }
+  // Sync video 2
+  if(sceneIdx===6){
+    const tgt = Math.min(localTime, v2dur);
+    if(Math.abs(v2el.currentTime - tgt) > 0.4) v2el.currentTime = tgt;
+    if(playing && v2el.paused) v2el.play().catch(()=>{});
+    updateCallouts(v2callouts, v2el.currentTime, activeCallouts2);
+  }
+
+  // Countdown on intro
+  if(sceneIdx===0){
+    const rem = Math.max(0, INTRO_DUR - localTime);
+    document.getElementById('cdNum').textContent = Math.min(Math.ceil(rem), 5);
+    document.getElementById('cdFill').style.width = (localTime/INTRO_DUR*100)+'%';
+  }
+
+  // Progress bar
+  document.getElementById('progress-fill').style.width = (globalTime/TOTAL*100).toFixed(2)+'%';
+
+  // Loop
+  if(globalTime >= TOTAL){
+    globalTime=0; v1started=false; v2started=false;
+    activeCallouts1={}; activeCallouts2={};
+    document.querySelectorAll('.callout').forEach(c=>c.classList.remove('show'));
+  }
+
+  raf = requestAnimationFrame(tick);
+}
+
+/* ── KEYBOARD: space to pause, arrows to seek ── */
+document.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); playing=!playing; if(playing){lastTs=null;} }
+  if(e.code==='ArrowRight') globalTime = Math.min(globalTime+5, TOTAL);
+  if(e.code==='ArrowLeft')  globalTime = Math.max(globalTime-5, 0);
+  if(e.code==='Digit0') globalTime=0;
+});
+</script>
+</body>
+</html>
